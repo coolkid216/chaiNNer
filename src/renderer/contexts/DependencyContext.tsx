@@ -278,7 +278,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
     const [isConsoleOpen, setIsConsoleOpen] = useState(false);
     const [usePipDirectly, setUsePipDirectly] = useState(false);
 
-    const [depList, setDepList] = useState<Package[]>([]);
+    const [depList, setDepList] = useState<Package[] | null>(null);
     const [refreshDepListTrigger, setRefreshDepListTrigger] = useState(false);
     useAsyncEffect(
         () => ({
@@ -349,7 +349,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
 
     // whether we are current installing/uninstalling packages or refreshing the list pf installed packages
     const currentlyProcessingDeps =
-        depList === undefined || installingPackage !== null || uninstallingPackage !== null;
+        depList === null || installingPackage !== null || uninstallingPackage !== null;
 
     const availableUpdates = useMemo(() => {
         return depList.filter(({ dependencies }) =>
