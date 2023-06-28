@@ -13,7 +13,9 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 
 installed_packages: Dict[str, Union[str, None]] = {}
 
-COLLECTING_REGEX = re.compile(r"Collecting ([a-zA-Z0-9-_]+)")
+COLLECTING_REGEX = re.compile(r"Collecting ([a-zA-Z0-9-_.]+)")
+UNINSTALLING_REGEX = re.compile(r"Uninstalling ([a-zA-Z0-9-_.]+)")
+UNINSTALLED_REGEX = re.compile(r"Successfully uninstalled ([a-zA-Z0-9-_.]+)")
 
 
 class DependencyInfo(TypedDict):
@@ -196,6 +198,96 @@ async def install_dependencies(
         installing_name = dep_info["package_name"]
         version = dep_info["version"]
         installed_packages[installing_name] = version
+
+
+def uninstall_dependencies_sync(
+    dependencies: List[DependencyInfo],
+):
+    if len(dependencies) == 0:
+        return
+
+    subprocess.check_call(
+        [
+            python_path,
+            "-m",
+            "pip",
+            "uninstall",
+            *[x["package_name"] for x in dependencies],
+            "-y",
+            "--disable-pip-version-check",
+            "--no-warn-script-location",
+        ]
+    )
+    for dep_info in dependencies:
+        package_name = dep_info["package_name"]
+        del installed_packages[package_name]
+
+
+async def uninstall_dependencies(
+    dependencies: List[DependencyInfo],
+    update_progress_cb: Optional[UpdateProgressFn] = None,
+    logger: Optional[Logger] = None,
+):
+    if update_progress_cb is None:
+        uninstall_dependencies_sync(dependencies)
+        return
+
+    dependency_name_map = {
+        dep_info["package_name"]: dep_info["display_name"] for dep_info in dependencies
+    }
+
+    deps_count = len(dependencies)
+    deps_counter = 0
+
+    DEP_MAX_PROGRESS = 0.8
+
+    def get_progress_amount():
+        progress = deps_counter / (deps_count + 1)
+        return min(max(0, progress), 1) * DEP_MAX_PROGRESS
+
+    process = subprocess.Popen(
+        [
+            python_path,
+            "-m",
+            "pip" "uninstall",
+            *[x["package_name"] for x in dependencies],
+            "-y",
+            "--disable-pip-version-check",
+            "--no-warn-script-location",
+        ]
+    )
+    uninstalling_name = "Unknown"
+    while True:
+        nextline = process.stdout.readline()  # type: ignore
+        if nextline == b"" and process.poll() is not None:
+            break
+        line = nextline.decode("utf-8").strip()
+        if logger is not None:
+            logger.info(line)
+        # The Uninstalling step of pip. It tells us what package is being uninstalled.
+        if "Uninstalling" in line:
+            match = UNINSTALLING_REGEX.search(line)
+            if match:
+                package_name = "-".join(match.group(1).split("-")[:-1])
+                await update_progress_cb(
+                    f"Uninstalling {uninstalling_name}...", get_progress_amount(), None
+                )
+        elif "Successfully uninstalled" in line:
+            match = UNINSTALLED_REGEX.search(line)
+            if match:
+                package_name = "-".join(match.group(1).split("-")[:-1])
+                uninstalled_name = dependency_name_map.get(package_name, None)
+                if uninstalled_name is None:
+                    uninstalled_name = package_name
+                else:
+                    deps_counter += 1
+                del installed_packages[package_name]
+                await update_progress_cb(
+                    f"Uninstalled {uninstalled_name}.", get_progress_amount(), None
+                )
+
+    process.wait()
+    await update_progress_cb(f"Finished uninstalling dependencies...", 1, None)
 
 
 __all__ = [

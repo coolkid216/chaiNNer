@@ -578,20 +578,35 @@ async def pip_sse(request: Request):
 @app.route("/dependencies/install", methods=["POST"])
 async def install_dependencies_req(request: Request):
     await nodes_available()
-    ctx = AppContext.get(request.app)
+    pip_queue = AppContext.get(request.app).pip_queue
+
+    async def update_progress(
+        message: str, progress: float, status_progress: Union[float, None] = None
+    ):
+        await pip_queue.put_and_wait(
+            {
+                "event": "install-status",
+                "data": {
+                    "message": message,
+                    "progress": progress,
+                    "statusProgress": status_progress,
+                },
+            },
+            timeout=1,
+        )
 
     try:
-        full_data = dict(request.json)  # type: ignore
-        dep_info: List[DependencyInfo] = [
+        deps: List[DependencyInfo] = [
             {
-                "package_name": dep["pypi_name"],
-                "display_name": dep["display_name"],
+                "package_name": dep["pypiName"],
+                "display_name": dep["displayName"],
                 "version": dep["version"],
-                "from_file": dep["from_file"],
+                "from_file": None,
             }
-            for dep in full_data["dependencies"]
+            for dep in request.json
         ]
-        # await install_dependencies(dep_info, ctx.pip_queue, logger)
+        logger.info(f"Installing dependencies: {deps}")
+        await install_dependencies(deps, update_progress, logger)
         return json(successResponse("Successfully installed dependencies!"), status=200)
     except Exception as exception:
         logger.error(exception, exc_info=True)
@@ -628,6 +643,7 @@ async def after_server_start(sanic_app: Sanic, loop: asyncio.AbstractEventLoop):
     ctx = AppContext.get(sanic_app)
     ctx.queue = EventQueue()
     ctx.setup_queue = EventQueue()
+    ctx.pip_queue = EventQueue()
 
     # start the setup task
     setup_task = loop.create_task(setup(sanic_app))

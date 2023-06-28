@@ -42,7 +42,7 @@ class IteratorProgressUpdateData(TypedDict):
     running: Optional[List[NodeId]]
 
 
-class BackendStatusData(TypedDict):
+class InstallStatusData(TypedDict):
     message: str
     progress: float
     statusProgress: Optional[float]
@@ -70,12 +70,17 @@ class IteratorProgressUpdateEvent(TypedDict):
 
 class BackendStatusEvent(TypedDict):
     event: Literal["backend-status"]
-    data: BackendStatusData
+    data: InstallStatusData
 
 
 class BackendStateEvent(TypedDict):
     event: Union[Literal["backend-ready"], Literal["backend-started"]]
     data: None
+
+
+class InstallStatusEvent(TypedDict):
+    event: Literal["install-status"]
+    data: InstallStatusData
 
 
 Event = Union[
@@ -85,6 +90,7 @@ Event = Union[
     IteratorProgressUpdateEvent,
     BackendStatusEvent,
     BackendStateEvent,
+    InstallStatusEvent,
 ]
 
 

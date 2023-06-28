@@ -10,9 +10,10 @@ import { log } from '../../common/log';
 export type BackendEventSource = EventSource & { readonly __backend?: never };
 
 export const useBackendEventSource = (
-    port: number
+    port: number,
+    path: 'sse' | 'pip-sse' = 'sse'
 ): readonly [BackendEventSource | null, EventSourceStatus] => {
-    return useEventSource(`http://localhost:${port}/sse`, true);
+    return useEventSource(`http://localhost:${port}/${path}`, true);
 };
 
 export type BackendEventSourceListener<T extends keyof BackendEventMap> = (

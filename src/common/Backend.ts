@@ -10,7 +10,7 @@ import {
     PythonInfo,
     SchemaId,
 } from './common-types';
-import { Package } from './dependencies';
+import { Package, PyPiPackage } from './dependencies';
 import { isRenderer } from './env';
 
 export interface BackendSuccessResponse {
@@ -218,6 +218,10 @@ export class Backend {
     dependencies(): Promise<Package[]> {
         return this.fetchJson('/dependencies', 'GET');
     }
+
+    installDependencies(deps: PyPiPackage[]): Promise<BackendResult<null>> {
+        return this.fetchJson('/dependencies/install', 'POST', deps);
+    }
 }
 
 const backendCache = new Map<number, Backend>();
@@ -276,4 +280,9 @@ export interface BackendEventMap {
         statusProgress?: number | null;
     };
     'backend-ready': null;
+    'install-status': {
+        message: string;
+        progress: number;
+        statusProgress?: number | null;
+    };
 }

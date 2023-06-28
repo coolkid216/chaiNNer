@@ -40,6 +40,10 @@ import { log } from '../../common/log';
 import { noop } from '../../common/util';
 import { versionGt } from '../../common/version';
 import { useAsyncEffect } from '../hooks/useAsyncEffect';
+import {
+    useBackendEventSource,
+    useBackendEventSourceListener,
+} from '../hooks/useBackendEventSource';
 import { useMemoObject } from '../hooks/useMemo';
 import { AlertBoxContext, AlertType } from './AlertBoxContext';
 import { BackendContext } from './BackendContext';
@@ -270,7 +274,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
 
     const { showAlert } = useContext(AlertBoxContext);
     const { useIsSystemPython } = useContext(SettingsContext);
-    const { backend, pythonInfo, restart } = useContext(BackendContext);
+    const { backend, pythonInfo, restart, port } = useContext(BackendContext);
     const { hasRelevantUnsavedChangesRef } = useContext(GlobalContext);
 
     const [isSystemPython] = useIsSystemPython;
@@ -304,7 +308,27 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
         },
         [setShellOutput]
     );
-    const onStdio: OnStdio = { onStderr: appendToOutput, onStdout: appendToOutput };
+
+    const [eventSource, eventSourceStatus] = useBackendEventSource(port, 'pip-sse');
+
+    useBackendEventSourceListener(eventSource, 'install-status', (data) => {
+        if (data) {
+            if (!isRunningShell) {
+                setIsRunningShell(true);
+            }
+            const { message, progress: totalProgress, statusProgress } = data;
+            appendToOutput(`${message}\n`);
+            setProgress(totalProgress * 100);
+            if (totalProgress === 1) {
+                setIsRunningShell(false);
+                setRefreshDepListTrigger(!refreshDepListTrigger);
+                setInstallingPackage(null);
+                setUninstallingPackage(null);
+                setProgress(0);
+                restart().catch(log.error);
+            }
+        }
+    });
 
     const changePackages = (supplier: () => Promise<void>) => {
         if (isRunningShell) throw new Error('Cannot run two pip commands at once');
@@ -329,6 +353,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
 
     const installPackage = (dep: Package) => {
         setInstallingPackage(dep);
+        backend.installDependencies(dep.dependencies);
         // changePackages(() =>
         //     runPipInstall(pythonInfo, [dep], usePipDirectly ? undefined : setProgress, onStdio)
         // );
@@ -352,7 +377,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
         depList === null || installingPackage !== null || uninstallingPackage !== null;
 
     const availableUpdates = useMemo(() => {
-        return depList.filter(({ dependencies }) =>
+        return depList?.filter(({ dependencies }) =>
             dependencies.some(({ version, installed }) => {
                 if (!installed) {
                     return true;
@@ -364,7 +389,7 @@ export const DependencyProvider = memo(({ children }: React.PropsWithChildren<un
 
     const value = useMemoObject<DependencyContextValue>({
         openDependencyManager: onOpen,
-        availableUpdates,
+        availableUpdates: availableUpdates ?? 0,
     });
 
     const [loadingExtInts, setLoadingExtInts] = useState(true);
